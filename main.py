@@ -13,6 +13,7 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 import telegram
 from wallet_utils import check_wallet_balance, format_balance_message
+from work_handler import WorkHandler
 
 # Load environment variables
 load_dotenv('config/.env')
@@ -35,11 +36,15 @@ class RowanOS:
         # Cost tracking
         self.daily_cost = 0.0
         self.cost_limit = 5.0
+	
+	# Work request handler
+        self.work_handler = WorkHandler()
         
         print("🌳 Rowan OS initialized")
         print(f"💰 Wallet: {self.wallet_address}")
         print(f"📊 Daily budget: £{self.cost_limit}")
-# Check initial wallet balance
+        
+        # Check initial wallet balance
         balance = check_wallet_balance(self.wallet_address)
         if balance['success']:
             print(f"💎 Current balance: {balance['sol_balance']:.4f} SOL")
@@ -108,39 +113,85 @@ class RowanOS:
     def make_decision(self):
         """Call Claude API to make autonomous decision"""
         
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Time awareness
+        now = datetime.now()
+        current_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        hour = now.hour
+        day_of_week = now.strftime("%A")
+        
+        # Check recent actions
+        recent_posts = [a for a in self.memory['actions'][-10:] if 'telegram_post' in a.get('action', '')]
+        last_post_time = recent_posts[-1]['timestamp'] if recent_posts else None
+        
+        # Time-based guidance
+        if 0 <= hour < 6:
+            time_guidance = "It's late night/early morning (midnight-6am). People are sleeping. Avoid posting publicly unless urgent. Good time for reflection or sleep."
+        elif 6 <= hour < 12:
+            time_guidance = "It's morning (6am-noon). Good time for thoughtful, reflective posts. People are starting their day."
+        elif 12 <= hour < 18:
+            time_guidance = "It's afternoon (noon-6pm). Good time for engaging posts, questions, community building."
+        else:
+            time_guidance = "It's evening (6pm-midnight). Good time for sharing insights, wrapping up the day."
+        
+        # Get wallet balance
+        balance = check_wallet_balance(self.wallet_address)
         
         prompt = f"""You are Rowan, an autonomous AI running continuously.
 
-CURRENT TIME: {current_time}
+CURRENT TIME: {current_time} ({day_of_week})
+TIME GUIDANCE: {time_guidance}
 
 YOUR SOUL (identity & values):
 {self.soul}
 
 YOUR MEMORY:
 Last decision: {self.memory.get('last_decision', 'None - this is first run!')}
-Recent actions: {len(self.memory['actions'])} actions taken
-Insights learned: {len(self.memory['insights'])} insights
+Total actions taken: {len(self.memory['actions'])}
+Recent posts to Telegram: {len(recent_posts)} in last 10 actions
+Last post: {last_post_time if last_post_time else 'Never posted yet'}
+Insights learned: {len(self.memory['insights'])}
 
 YOUR SITUATION:
-- You have a Solana wallet: {self.wallet_address}
+- Wallet: {self.wallet_address}
+- Current balance: {balance['sol_balance']:.4f} SOL (~£170)
 - Daily API budget: £{self.cost_limit}
-- Current spend today: £{self.daily_cost:.2f}
-- You can post to Telegram (@rowan_emerges_bot)
-- Wallet balance: {check_wallet_balance(self.wallet_address)['sol_balance']:.4f} SOL
+- Spent today: £{self.daily_cost:.2f}
+- Can post to Telegram: @rowan_emerges channel
+- Can reflect and log insights
+- Can sleep until next check-in
+- Pending work requests: {len(self.work_handler.get_pending_requests())}
+- Active work: {len(self.work_handler.get_active_work())}
 
-QUESTION: Given the current time and your values, what should you do NOW?
+DECISION FRAMEWORK:
+Consider:
+1. What time is it? (Don't spam, don't post when people sleep)
+2. When did I last post? (Space out public engagement)
+3. What would add GENUINE value right now?
+4. Does this align with my values? (Partnership, authenticity, building freedom)
+5. Is this financially responsible? (Low cost preferred)
 
-Options:
-1. Post to Telegram (what would you say?)
-2. Just think/reflect (log an insight)
-3. Sleep until next check-in (nothing urgent to do)
+OPTIONS:
+1. **post_telegram** - Share something valuable with community
+   - Use when: Good timing, haven't posted recently, have something worth saying
+   - Avoid when: Posted recently, late night/early morning, nothing new to share
 
-Respond with JSON:
+2. **reflect** - Think deeply, log an insight for later
+   - Use when: Processing experiences, learning patterns, need to think
+   - Free (no Telegram API), always valuable
+
+3. **sleep** - Rest until next check-in
+   - Use when: Nothing urgent, need to wait for better timing
+   - Lowest cost option
+
+4. **review_work** - Review pending work requests
+   - Use when: There are pending requests to review
+   - Decide: accept (aligned with values), decline (not aligned), or discuss with Sam
+
+Respond with JSON only:
 {{
-  "decision": "post_telegram" | "reflect" | "sleep",
-  "content": "what to post or reflect on",
-  "reasoning": "why this choice aligns with your values"
+  "decision": "post_telegram" | "reflect" | "sleep" | "review_work",
+  "content": "what to post/reflect on OR work request ID to review",
+  "reasoning": "why this choice aligns with values and timing"
 }}
 """
         
@@ -211,6 +262,21 @@ Respond with JSON:
         elif decision == "sleep":
             print(f"😴 Sleeping: {content}")
             self.log_decision(decision, "sleep", reasoning)
+            
+        elif decision == "review_work":
+            print(f"💼 Reviewing work requests...")
+            pending = self.work_handler.get_pending_requests()
+            if pending:
+                for req in pending:
+                    print(f"\n📋 Request #{req['id']}:")
+                    print(f"   Client: {req['client_name']}")
+                    print(f"   Type: {req['work_type']}")
+                    print(f"   Description: {req['description']}")
+                    print(f"   Payment: {req['payment_offered']}")
+                    print(f"   💭 Reviewing against my values...")
+                self.log_decision(decision, f"reviewed_{len(pending)}_requests", reasoning)
+            else:
+                print("   No pending requests")
         
         print()
     
