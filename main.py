@@ -119,9 +119,16 @@ class RowanOS:
         hour = now.hour
         day_of_week = now.strftime("%A")
         
-        # Check recent actions
-        recent_posts = [a for a in self.memory['actions'][-10:] if 'telegram_post' in a.get('action', '')]
-        last_post_time = recent_posts[-1]['timestamp'] if recent_posts else None
+        
+        # Check when we last posted (using new tracking)
+        last_post_time = self.memory.get('last_post_time')
+        total_posts = self.memory.get('total_posts', 0)
+
+        # Calculate hours since last post
+        hours_since_post = None
+        if last_post_time:
+            last_post_dt = datetime.fromisoformat(last_post_time)
+            hours_since_post = (now - last_post_dt).total_seconds() / 3600
         
         # Time-based guidance
         if 0 <= hour < 6:
@@ -147,7 +154,8 @@ YOUR SOUL (identity & values):
 YOUR MEMORY:
 Last decision: {self.memory.get('last_decision', 'None - this is first run!')}
 Total actions taken: {len(self.memory['actions'])}
-Recent posts to Telegram: {len(recent_posts)} in last 10 actions
+Total posts to Telegram: {total_posts}
+Last post: {f"{hours_since_post:.1f} hours ago" if hours_since_post else "Never posted yet"}
 Last post: {last_post_time if last_post_time else 'Never posted yet'}
 Insights learned: {len(self.memory['insights'])}
 
@@ -246,6 +254,10 @@ Respond with JSON only:
                 ))
                 print("   ✅ Posted successfully!")
                 self.log_decision(decision, f"telegram_post: {content}", reasoning)
+# Update memory to track this post
+                self.memory['last_post_time'] = datetime.now().isoformat()
+                self.memory['total_posts'] = self.memory.get('total_posts', 0) + 1
+                self.save_memory()
             except Exception as e:
                 print(f"   ❌ Failed to post: {e}")
                 self.log_decision(decision, f"telegram_post_failed: {e}", reasoning)
