@@ -195,6 +195,8 @@ OPTIONS:
    - Use when: There are pending requests to review
    - Decide: accept (aligned with values), decline (not aligned), or discuss with Sam
 
+5. **create_art** - Express visually through art creation
+
 Respond with JSON only:
 {{
   "decision": "post_telegram" | "reflect" | "sleep" | "review_work",
@@ -262,11 +264,29 @@ Respond with JSON only:
                 print(f"   ❌ Failed to post: {e}")
                 self.log_decision(decision, f"telegram_post_failed: {e}", reasoning)
             
+
+        elif decision == "create_art":
+            print(f"🎨 Creating art: {content}")
+    
+    # Save art to file
+            art_file = f"/home/claude/art_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            with open(art_file, 'w') as f:
+                f.write(content)
+    
+    # Copy to outputs so you can see it
+            import shutil
+            output_file = f"/mnt/user-data/outputs/rowan_art_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            shutil.copy(art_file, output_file)
+    
+            print(f"   ✅ Art saved to {output_file}")
+
+            self.log_decision(decision, f"created_art: {art_file}", reasoning)
+        
         elif decision == "reflect":
             print(f"🧠 Reflection: {content}")
             self.memory['insights'].append({
-                'timestamp': datetime.now().isoformat(),
-                'insight': content
+            'timestamp': datetime.now().isoformat(),
+            'insight': content
             })
             self.save_memory()
             self.log_decision(decision, f"reflection: {content}", reasoning)
