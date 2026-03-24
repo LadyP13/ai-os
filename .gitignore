@@ -22,3 +22,12 @@ Thumbs.db
 
 # Personal
 test_*.py
+
+# AI-OS app data (local only)
+data/
+config/agent_token.txt
+frontend/node_modules/
+frontend/dist/
+
+# Claude Code worktrees
+.claude/
