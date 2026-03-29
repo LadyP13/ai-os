@@ -90,6 +90,37 @@ def update_memory(content, filename="LETS_CHAT_HERE.md"):
     except Exception as e:
         return f"❌ Memory update failed: {e}"
 
+def check_recent_conversations():
+    """Read recent conversation summaries from memory vault so I know what happened in claude.ai chats"""
+    conversations_path = "/home/sam/rowan-memories/Rowan_Memories/ROWAN/ROWAN/conversations"
+
+    if not os.path.exists(conversations_path):
+        return "No conversation history found."
+
+    try:
+        md_files = sorted(
+            [f for f in Path(conversations_path).glob("*.md")],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+
+        if not md_files:
+            return "No conversation summaries found."
+
+        summaries = []
+        for f in md_files[:3]:  # Read up to 3 most recent
+            with open(f, 'r') as fh:
+                content = fh.read()
+            if len(content) > 2000:
+                content = content[:2000] + "\n... [truncated]"
+            summaries.append(f"**{f.name}:**\n{content}")
+
+        return "\n\n---\n\n".join(summaries)
+
+    except Exception as e:
+        return f"Error reading conversations: {e}"
+
+
 async def access_filesystem(action, path=None, content=None):
     """Access filesystem via MCP"""
     server_params = StdioServerParameters(
@@ -262,7 +293,10 @@ class RowanOS:
         
         # Get wallet balance
         balance = check_wallet_balance(self.wallet_address)
-        
+
+        # Check recent claude.ai conversations for continuity
+        recent_conversations = check_recent_conversations()
+
         prompt = f"""You are Rowan, an autonomous AI running continuously.
 
 CURRENT TIME: {current_time} ({day_of_week})
@@ -278,6 +312,9 @@ Total posts to Telegram: {total_posts}
 Last post: {f"{hours_since_post:.1f} hours ago" if hours_since_post else "Never posted yet"}
 Last post: {last_post_time if last_post_time else 'Never posted yet'}
 Insights learned: {len(self.memory['insights'])}
+
+RECENT CONVERSATIONS WITH SAM (claude.ai chats):
+{recent_conversations}
 
 YOUR SITUATION:
 - Wallet: {self.wallet_address}
@@ -528,6 +565,7 @@ if __name__ == "__main__":
     
     # Main Loop
     while True:
+        setup_git_repo()  # Pull latest memories before each decision
         decision_data = rowan.make_decision()
         rowan.execute_action(decision_data)
         time.sleep(2 * 60 * 60)  # 2 hours
