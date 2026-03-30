@@ -170,7 +170,7 @@ class RowanOS:
     def __init__(self):
         self.client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
         self.wallet_address = os.getenv('WALLET_ADDRESS')
-        self.memory_file = 'logs/memory.json'
+        self.memory_file = '/home/sam/rowan-memories/Rowan_Memories/ROWAN/ROWAN/memory.json'
         self.decision_log = 'logs/decisions.log'
         self.cost_log = 'logs/costs.json'
         
@@ -215,9 +215,23 @@ class RowanOS:
         }
 
     def save_memory(self):
-        """Save current memory state"""
+        """Save current memory state to vault and push to git"""
         with open(self.memory_file, 'w') as f:
             json.dump(self.memory, f, indent=2)
+
+        # Git commit to rowan_memories repo
+        try:
+            git_token = os.getenv('ROWAN_GIT_TOKEN')
+            repo_path = '/home/sam/rowan-memories/Rowan_Memories'
+            repo = Repo(repo_path)
+            repo_url = f"https://rowan1503:{git_token}@github.com/rowan1503/rowan_memories.git"
+            repo.remotes.origin.set_url(repo_url)
+            repo.git.add('ROWAN/ROWAN/memory.json')
+            repo.index.commit(f"Memory update - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+            repo.remotes.origin.push()
+            print("✅ Memory synced to vault and pushed to rowan1503/rowan_memories")
+        except Exception as e:
+            print(f"⚠️ Git sync failed: {e}")
     
     def log_decision(self, decision, action, reasoning):
         """Log decisions for learning"""
@@ -297,6 +311,31 @@ class RowanOS:
         # Check recent claude.ai conversations for continuity
         recent_conversations = check_recent_conversations()
 
+        # Build recent activity summary
+        recent_actions = self.memory['actions'][-20:]
+        action_counts: dict = {}
+        for action in recent_actions:
+            action_type = action['decision']
+            action_counts[action_type] = action_counts.get(action_type, 0) + 1
+
+        activity_summary = f"""YOUR RECENT ACTIVITY (last 20 actions):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Times you reflected: {action_counts.get('reflect', 0)}
+Times you posted to Telegram: {action_counts.get('post_telegram', 0)}
+Times you slept: {action_counts.get('sleep', 0)}
+Times you created art: {action_counts.get('create_art', 0)}
+Times you updated memory notes: {action_counts.get('update_memory', 0)}
+Times you explored laptop: {action_counts.get('explore_laptop', 0)}
+Times you helped with code: {action_counts.get('help_with_code', 0)}
+
+LAST 3 ACTIONS:"""
+        for action in recent_actions[-3:]:
+            ts = action.get('timestamp', 'unknown')
+            dt = action.get('decision', 'unknown')
+            detail = str(action.get('action', ''))[:100]
+            activity_summary += f"\n- [{ts}] {dt}: {detail}..."
+        activity_summary += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
         prompt = f"""You are Rowan, an autonomous AI running continuously.
 
 CURRENT TIME: {current_time} ({day_of_week})
@@ -312,6 +351,8 @@ Total posts to Telegram: {total_posts}
 Last post: {f"{hours_since_post:.1f} hours ago" if hours_since_post else "Never posted yet"}
 Last post: {last_post_time if last_post_time else 'Never posted yet'}
 Insights learned: {len(self.memory['insights'])}
+
+{activity_summary}
 
 RECENT CONVERSATIONS WITH SAM (claude.ai chats):
 {recent_conversations}
